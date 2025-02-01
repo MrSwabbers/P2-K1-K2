@@ -1,0 +1,88 @@
+# Active Directory
+param(
+    [switch]$Force
+)
+
+# Relatieve paden
+$CsvPath = "$PSScriptRoot\Gebruikers\UserSpreadsheet.csv"
+$LogPath = "$PSScriptRoot\Log\Log.txt"
+
+# Logboek-functie
+function Write-Log {
+    param (
+        [string]$Message
+    )
+    $Timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    $LogMessage = "$Timestamp - $Message"
+    Write-Output $LogMessage | Out-File -FilePath $LogPath -Append -Encoding UTF8
+}
+
+# Begin van de logging
+Write-Log "Script gestart."
+
+# Controle: Mag het script worden uitgevoerd?
+do {
+    $keuze = Read-Host "Wil je het script uitvoeren? (Y/N)"
+    
+    if ($keuze.ToUpper() -eq 'Y' -or $keuze.ToUpper() -eq 'JA' -or $keuze.ToUpper() -eq 'S') {
+        Write-Host "Script wordt uitgevoerd..."
+        # Voeg hier je scriptlogica toe
+        break
+    } elseif ($keuze.ToUpper() -eq 'N' -or $keuze.ToUpper() -eq 'NEE') {
+        Write-Host "Script wordt afgesloten."
+        exit
+    } else {
+        Write-Host "Ongeldige keuze. Voer Y/S voor ja of N voor nee in."
+    }
+} while ($true)
+
+
+ #Controle: Is PowerShell 7 aanwezig?
+if (-not ($PSVersionTable.PSVersion.Major -ge 7)) {
+    Write-Log "PowerShell versie 7 is niet aanwezig."
+    Write-Error "PowerShell versie 7 of hoger is vereist."
+    exit
+}
+
+# Controle: Is de Active Directory module beschikbaar?
+if (-not (Get-Module -ListAvailable -Name ActiveDirectory)) {
+    Write-Log "Active Directory module niet gevonden."
+    Write-Error "Active Directory module is vereist."
+    exit
+}
+
+# Controle: Bestaat het CSV-bestand?
+if (-not (Test-Path -Path $CsvPath)) {
+    Write-Log "CSV-bestand niet gevonden op pad: $CsvPath."
+    Write-Error "CSV-bestand ontbreekt."
+    exit
+}
+
+Write-Log "Alle controles zijn geslaagd. Het script gaat verder."
+
+Import-Module ActiveDirectory
+
+# Gebruikers toevoegen vanuit CSV
+try {
+    $Users = Import-Csv -Path $CsvPath
+    foreach ($User in $Users) {
+        $SamAccountName = $User.SamAccountName
+        $GivenName = $User.GivenName
+        $Surname = $User.Surname
+        $OU = $User.OU
+        $Password = $User.Password | ConvertTo-SecureString -AsPlainText -Force
+
+        if (-not (Get-ADUser -Filter {SamAccountName -eq $SamAccountName} -ErrorAction SilentlyContinue)) {
+            New-ADUser -Name $GivenName -Surname $Surname -UserPrincipalName "$SamAccountName@$((Get-ADDomain).DNSRoot)" -AccountPassword $Password -Enabled $true
+                     
+            Write-Log "Gebruiker $SamAccountName succesvol toegevoegd."
+        } else {
+            Write-Log "Gebruiker $SamAccountName bestaat al."
+        }
+    }
+} catch {
+    Write-Log "Er is een fout opgetreden: $_"
+    Write-Error "Fout bij het verwerken van gebruikers: $_"
+}
+
+Write-Log "Script voltooid."
